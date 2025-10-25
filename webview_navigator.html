@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>WebView Navigator</title>
+  <meta name="color-scheme" content="dark light">
+  <style>
+    :root {
+      --bg: #0b0e13;
+      --bar: #121725;
+      --card: #171c2b;
+      --text: #e6e8ee;
+      --muted: #9aa0a6;
+      --border: #22283a;
+      --focus: #93c5fd;
+      --danger: #ef4444;
+      --ok: #22c55e;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      height: 100%;
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 14px/1.35 system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica, Arial;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    .bar {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      display: grid;
+      grid-template-columns: auto 1fr auto auto;
+      gap: 8px;
+      align-items: center;
+      padding: 8px;
+      background: var(--bar);
+      border-bottom: 1px solid var(--border);
+      z-index: 10;
+    }
+    .group {
+      display: inline-flex;
+      gap: 6px;
+      align-items: center;
+    }
+    .btn {
+      appearance: none;
+      border: 1px solid var(--border);
+      background: linear-gradient(180deg, #1c2335, #161b2a);
+      color: var(--text);
+      padding: 8px 10px;
+      border-radius: 10px;
+      font-weight: 600;
+      cursor: pointer;
+      min-width: 36px;
+      text-align: center;
+    }
+    .btn:active { transform: translateY(1px); }
+    .btn[disabled] { opacity: .5; pointer-events: none; }
+    .addr-wrap { position: relative; }
+    #addr {
+      width: 100%;
+      padding: 10px 12px 10px 12px;
+      background: var(--card);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      outline: none;
+    }
+    #addr::placeholder { color: #6b7280; }
+    #addr:focus {
+      border-color: var(--focus);
+      box-shadow: 0 0 0 3px rgba(147, 197, 253, 0.25);
+    }
+    .switches { color: var(--muted); font-size: 12px; display: flex; gap: 10px; padding-right: 6px; }
+    .switches label { display: inline-flex; align-items: center; gap: 6px; }
+    .status {
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      background: var(--bar);
+      border-top: 1px solid var(--border);
+      padding: 6px 10px;
+      min-height: 28px;
+      color: var(--muted);
+      font-size: 12px;
+      display: flex; gap: 12px; align-items: center;
+    }
+    #view {
+      position: fixed;
+      top: 56px; /* bar height */
+      bottom: 28px; /* status height */
+      left: 0; right: 0;
+      width: 100%;
+      height: calc(100% - 56px - 28px);
+      border: none;
+      background: #0e111a;
+    }
+    .pill {
+      padding: 2px 8px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--card);
+    }
+    .error { color: var(--danger); }
+    .ok { color: var(--ok); }
+    @media (max-width: 520px) {
+      .switches { display: none; }
+      .bar { grid-template-columns: auto 1fr auto; }
+    }
+  </style>
+</head>
+<body>
+  <div class="bar">
+    <div class="group">
+      <button id="back" class="btn" title="Atrás (Alt+←)">←</button>
+      <button id="fwd" class="btn" title="Adelante (Alt+→)">→</button>
+      <button id="reload" class="btn" title="Recargar (Ctrl+R)">⟳</button>
+      <button id="stop" class="btn" title="Detener">⨯</button>
+      <button id="home" class="btn" title="Inicio">⌂</button>
+    </div>
+    <div class="addr-wrap">
+      <input id="addr" type="text" inputmode="url" autocomplete="off" spellcheck="false"
+             placeholder="Escribe IP/host/URL y Enter — ej: 192.168.1.1 o https://10.0.0.1" />
+    </div>
+    <div class="group">
+      <button id="go" class="btn" title="Ir (Enter)">Ir</button>
+      <button id="openTop" class="btn" title="Abrir directo (reemplaza esta vista)">Abrir directo</button>
+    </div>
+    <div class="switches">
+      <label><input type="checkbox" id="httpsfirst" checked /> https por defecto</label>
+      <label><input type="checkbox" id="embed" checked /> Abrir embebido (iframe)</label>
+    </div>
+  </div>
+
+  <iframe id="view" sandbox="allow-forms allow-scripts allow-same-origin allow-popups" srcdoc="
+    <!DOCTYPE html><html><head><meta charset='utf-8'>
+    <style>body{margin:0;display:grid;place-items:center;height:100vh;background:#0e111a;color:#e6e8ee;font:14px system-ui}</style>
+    </head><body>
+      <div>
+        <div style='opacity:.7;margin-bottom:8px'>Listo para navegar</div>
+        <div style='font-size:12px;opacity:.6'>Escribe una dirección arriba y presiona Enter</div>
+      </div>
+    </body></html>
+  "></iframe>
+
+  <div class="status">
+    <span id="statText">Idle</span>
+    <span id="mode" class="pill">Modo: iframe</span>
+  </div>
+
+  <script>
+    (function () {
+      const addr = document.getElementById('addr');
+      const back = document.getElementById('back');
+      const fwd = document.getElementById('fwd');
+      const reload = document.getElementById('reload');
+      const stopBtn = document.getElementById('stop');
+      const home = document.getElementById('home');
+      const go = document.getElementById('go');
+      const openTop = document.getElementById('openTop');
+      const httpsfirst = document.getElementById('httpsfirst');
+      const embed = document.getElementById('embed');
+      const view = document.getElementById('view');
+      const statText = document.getElementById('statText');
+      const mode = document.getElementById('mode');
+
+      // Helpers
+      function normalizeUrl(value) {
+        let v = (value || '').trim();
+        if (!v) return null;
+        if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(v)) return v; // has scheme
+        if (v.startsWith('//')) return 'http:' + v;
+        if (v.startsWith('[') && v.endsWith(']')) v = v.slice(1, -1); // IPv6 [::1]
+        if (/\s/.test(v)) v = v.replace(/\s+/g, '');
+        const sch = httpsfirst.checked ? 'https://' : 'http://';
+        return sch + v;
+      }
+
+      function setStatus(text, cls) {
+        statText.textContent = text;
+        statText.className = cls || '';
+      }
+
+      function load(url) {
+        const u = normalizeUrl(url);
+        if (!u) { setStatus('Pon una dirección.', 'error'); return; }
+
+        // Validate URL
+        try { new URL(u); } catch (e) { setStatus('Dirección inválida: ' + u, 'error'); return; }
+
+        if (embed.checked) {
+          mode.textContent = 'Modo: iframe';
+          setStatus('Cargando ' + u + ' ...');
+          view.src = u;
+          // Fallback hint after timeout (muchos sitios bloquean iframes)
+          clearTimeout(load._t);
+          load._t = setTimeout(() => {
+            setStatus('Si no ves contenido, el sitio puede bloquear iframes. Usa "Abrir directo".', 'error');
+          }, 2500);
+        } else {
+          mode.textContent = 'Modo: directo';
+          location.href = u; // reemplaza la vista (no hay barra después)
+        }
+      }
+
+      // Buttons
+      go.addEventListener('click', () => load(addr.value));
+      openTop.addEventListener('click', () => {
+        const u = normalizeUrl(addr.value);
+        if (!u) { setStatus('Pon una dirección.', 'error'); return; }
+        try { new URL(u); } catch (e) { setStatus('Dirección inválida: ' + u, 'error'); return; }
+        mode.textContent = 'Modo: directo';
+        location.href = u;
+      });
+      back.addEventListener('click', () => { try { view.contentWindow.history.back(); } catch(e) {} });
+      fwd.addEventListener('click', () => { try { view.contentWindow.history.forward(); } catch(e) {} });
+      reload.addEventListener('click', () => {
+        try { view.contentWindow.location.reload(); } catch(e) { view.src = view.src; }
+      });
+      stopBtn.addEventListener('click', () => {
+        try { view.contentWindow.stop(); } catch(e) {}
+        setStatus('Carga detenida.');
+      });
+      home.addEventListener('click', () => {
+        view.removeAttribute('src');
+        view.setAttribute('srcdoc', '<!DOCTYPE html><html><head><meta charset=\'utf-8\'><style>body{margin:0;display:grid;place-items:center;height:100vh;background:#0e111a;color:#e6e8ee;font:14px system-ui}</style></head><body><div><div style=\'opacity:.7;margin-bottom:8px\'>Inicio</div><div style=\'font-size:12px;opacity:.6\'>Escribe una dirección arriba y presiona Enter</div></div></body></html>');
+        setStatus('Inicio');
+      });
+
+      // Keyboard shortcuts
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && document.activeElement === addr) {
+          e.preventDefault();
+          load(addr.value);
+        } else if (e.key === 'r' && (e.ctrlKey || e.metaKey)) {
+          e.preventDefault(); reload.click();
+        } else if (e.altKey && e.key === 'ArrowLeft') {
+          e.preventDefault(); back.click();
+        } else if (e.altKey && e.key === 'ArrowRight') {
+          e.preventDefault(); fwd.click();
+        }
+      });
+
+      // Update status when iframe finishes
+      view.addEventListener('load', () => {
+        setStatus('Listo', 'ok');
+      });
+
+      // Show current mode
+      embed.addEventListener('change', () => {
+        mode.textContent = 'Modo: ' + (embed.checked ? 'iframe' : 'directo');
+      });
+
+      // Autofocus on address
+      setTimeout(() => addr.focus(), 150);
+    })();
+  </script>
+</body>
+</html>
